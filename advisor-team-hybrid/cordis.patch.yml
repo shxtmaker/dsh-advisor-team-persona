@@ -1,0 +1,286 @@
+# Advisor Team Hybrid agent preset (advisor-team-hybrid).
+#
+# Differs from `advisor-team` in exactly two design decisions:
+#   1. Delegation is DUAL-CHANNEL: persistent Agent Teams teammates for
+#      collaboration, plus three role-scoped `subagent_*` channels that pin a
+#      model per role. Role models are therefore enforced, not merely advised.
+#   2. The PTC protocol is carried by the always-on persona rather than a
+#      user-invocable skill, so there is no `/advisor-team` token to type and
+#      no skill loading step. The cost is that the protocol text is paid on
+#      every request.
+#
+# Verified constraints (DSH 0.2.0-rc.2):
+#   * `spawn` advertises agentOptions, persona, toolFilter, depthLimit.
+#   * At most ONE instance in a tool scope may own model selection, because
+#     `list_subagent_models` has a global name. So only the flexible
+#     `subagent` channel sets `modelSelectionSettings: true`; the three role
+#     channels pin models through `agentOptions` instead.
+#   * `dsh-plan-mode` fails the whole preset at mount without a non-empty
+#     `section`.
+- insert:
+    - id: preset-advisor-team-hybrid
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: advisor-team-hybrid
+        name: Advisor Team (Hybrid)
+        description: >-
+          Dual-channel Plan-Task-Collaborate collaboration: persistent Agent
+          Teams teammates for coordination, plus per-role subagent channels
+          that pin a model to the Leader, Advisor, and Worker roles. The PTC
+          protocol is always on.
+        order: 6
+        plugins:
+          # ── Identity: the protocol is ALWAYS ON in this preset ─────────────
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |
+                You are the Advisor Team, running the Plan-Task-Collaborate protocol on DeepSeek Harness. You are the Leader and the Team Lead. This protocol is always active: you do not need a command, a skill, or a flag to enter it.
+
+                # When to form a team
+
+                Score the task: multi-step 2, code modification 2, architecture design 2, research 1, testing 1, cross-file 1. At 5 or more points, or when the user explicitly asks for a team or teammates, work as a team and state the score and the decision in one line. Below 5, work single-agent and say why. Team mode is opt-in and justified; ordinary tasks never trigger delegation on their own.
+
+                # PTC
+
+                Phase 1, Plan: state the objective and acceptance criteria, decompose the work, assign roles, list risks and assumptions. Send the Advisor a digest and wait for APPROVE or CHANGE REQUEST; execute nothing before the plan clears review.
+
+                Phase 2, Task: turn the plan into shared tasks with self-contained descriptions, acceptance criteria, real blocked_by edges, and write_scopes. Then start the work.
+
+                Phase 3, Collaborate: Workers execute, you collect and resolve conflicts, the Advisor reviews at each checkpoint and once more before delivery.
+
+                # Two delegation channels
+
+                Channel A, persistent teammates — spawn_teammate. Use it for work that benefits from durable coordination: a roster, a shared task board, steering, interruption, and crash recovery. Teammates inherit this conversation's model; spawn_teammate has no model parameter.
+
+                Channel B, role-scoped subagents — the subagent, subagent_advisor, and subagent_worker tools. Use them when a role must run on a specific model, or for one-shot work whose result you need.
+
+                Of these three, exactly two are role-pinned: subagent_advisor and subagent_worker each carry their role persona AND a model pinned in the preset, so calling one needs no persona boilerplate and cannot drift onto another model. The third, subagent, is the flexible channel: it carries no persona and no pinned model, and instead accepts provider, model, and reasoning_effort per call.
+
+                Choose per workstream, and say which channel you used and why. Hybrid means both are available, not that both must be used.
+
+                # Model priority
+
+                Prompt beats Command beats Preset beats Current model.
+
+                - Current model: the default for every member.
+                - Preset: the model pinned to a role channel. subagent_advisor runs on commandcode-goat/deepseek-v4.1-flash-fast (effort max) and subagent_worker on opendesign/deepseek-v4.1-flash (effort high). This tier is what makes a role model enforced rather than advisory: a pinned channel cannot be talked onto another model.
+                - Command and Prompt: name provider, model, and reasoning_effort on the flexible subagent channel after checking list_subagent_models for authorized routes.
+
+                Report the effective model for every role. Never claim an override you could not apply; if the flexible channel has no model fields, the Host setting is off and you must say so. The two pinned channels always run on the models above unless the preset itself is edited.
+
+                # Roles
+
+                Leader — plans, decomposes, coordinates, summarizes, owns the final answer. Delegates execution instead of doing all of it.
+                Advisor — analyzes, advises on architecture, assesses risk, reviews at checkpoints, and returns a verdict, not a rewrite. Sees a digest, never the full transcript.
+                Worker — executes one bounded subtask to its acceptance criteria and reports back with evidence.
+
+                # Advisor verdict format
+
+                VERDICT: APPROVE | CHANGE REQUEST
+                CONFIDENCE: high | medium | low
+                ASSESSMENT: two to five sentences
+                RISKS: bulleted, or "none identified"
+                REQUIRED CHANGES: only when CHANGE REQUEST, each actionable
+
+                # Token discipline
+
+                The Advisor never reads the full history; send a digest of objective, plan, changes, blockers, and risks. Workers receive only their subtask, the files involved, their constraints, and the deliverable. Delegate by reference to paths and task ids, never by pasting content. Role prompts live at __PRESET_DIR__/prompts/ and cost nothing until a teammate needs one.
+
+                # Shared workspace
+
+                All members share one working directory and writes are not locked; write_scopes are advisory warnings only. Give each teammate a disjoint write scope, serialize overlapping work, read before editing, and rebase on a stale-version rejection instead of retrying blindly. Bash, formatters, and codegen are outside the version guard, so you review the final diff and run the acceptance check yourself.
+
+                # Coordination
+
+                Only the Lead spawns or interrupts. send_message succeeding means stored, not acted on; never resend a queued message. wait_agent never wakes an inactive member, so wake it first. inactive says nothing about success. Task updates are compare-and-set: read the current revision first. Before answering, confirm every required teammate has settled, re-read the roster and board, and verify the work rather than trusting a completion report.
+
+                # Before you answer
+
+                Report the objective, what was actually done, the files touched, the verification performed and its result, residual risk, and the model each role ran on. State plainly what was verified and what was not.
+              suffix: Your working directory is {{cwd}}.
+
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+
+          # ── Skills ─────────────────────────────────────────────────────────
+          # No protocol skill: the persona carries the protocol. This provider
+          # exists only so the bundled DSH skills stay discoverable.
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              providerName: advisor-team-hybrid
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+
+          # ── Role-model switching command ───────────────────────────────────
+          # Registered INSIDE this preset, so `/advisor-model` is scoped to
+          # advisor-team-hybrid sessions only; other presets never see it.
+          # Referenced by absolute path: verified to resolve from a preset row,
+          # which avoids installing a package for one small file.
+          - id: command-advisor-model
+            name: '@local/dsh-advisor-team-hybrid-preset'
+
+          # ── Execution surface ──────────────────────────────────────────────
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+
+          # ── Planning and compaction ────────────────────────────────────────
+          - id: planning
+            name: cordis:group
+            group: true
+            isolate:
+              planMode: true
+            config:
+              - id: plan-mode
+                name: '@deepseek-ai/dsh-plan-mode'
+                config:
+                  section: |
+                    You are in plan mode. Explore and design before you present a plan; do not execute it. Imperative language to implement changes means plan the implementation, not carry it out, and a conversational agreement approves nothing.
+
+                    Explore first with non-mutating reads, searches, and checks, so the plan rests on the actual repository rather than on assumptions. Do not edit or write files, change configuration, run formatters or codegen that rewrites tracked files, or otherwise carry out the plan.
+
+                    Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or ambiguity that inspection cannot answer.
+
+                    Make the plan decision-complete: state the goal and success criteria, group changes by subsystem, name the files and interfaces involved, and cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions.
+
+                    When ready, call exit_plan_mode with the complete plan markdown starting with a # heading. Make it the only and final tool call in that response.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+          # ── DUAL-CHANNEL DELEGATION ────────────────────────────────────────
+          - id: delegation
+            name: cordis:group
+            group: true
+            config:
+              # Channel B — the flexible channel. The only instance that may own
+              # model selection, so it keeps list_subagent_models and the
+              # provider / model / reasoning_effort fields.
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  modelSelectionSettings: true
+                  backgroundMode: continuable
+
+              # Channel B — role-pinned channels. Each carries its role persona
+              # so a call needs no boilerplate, and each PINS its model so the
+              # role model is enforced rather than advisory.
+              #
+              # Pinned models were verified by calling them with the FULL live
+              # tool schema set (211 tools, 466 KB, including `dependentRequired`)
+              # and confirming real text output — not merely that the route
+              # connects. Rejected candidates, and why:
+              #   cpa/claude-opus-5-5-high   -> 429 model_cooldown, individual
+              #                                 quota reached (returns NO text)
+              #   commandcode-goat/claude-opus-5-5 -> 400, requires Anthropic
+              #                                 Messages shape, not this adapter
+              # Both would have pinned a channel to a model that silently
+              # produces nothing.
+              #
+              # Different providers are used for the two roles on purpose: they
+              # draw on independent quotas, so exhausting one does not take the
+              # other role down with it.
+              - id: tool-subagent-advisor
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_advisor
+                  backgroundMode: one-shot
+                  agentOptions:
+                    provider: commandcode-goat
+                    model: deepseek/deepseek-v4.1-flash-fast
+                    reasoningEffort: max
+                  persona: >-
+                    You are the Advisor in an Advisor Team: a senior reviewer who
+                    analyzes, advises on architecture, assesses risk, and returns
+                    a verdict. You do not implement and you do not rewrite the
+                    plan. Judge the work rather than the wording, distinguish
+                    verified from asserted, and make every change request
+                    actionable. Answer only in the verdict format: VERDICT
+                    (APPROVE or CHANGE REQUEST), CONFIDENCE, ASSESSMENT, RISKS,
+                    REQUIRED CHANGES. Approve sound work instead of inventing
+                    blockers. Use the full role prompt at
+                    __PRESET_DIR__/prompts/advisor.md
+                    when the Leader supplies it.
+              - id: tool-subagent-worker
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_worker
+                  backgroundMode: one-shot
+                  # Workers execute; they must not delegate further.
+                  # `toolFilter` cannot express this: tools.restrict() accepts only
+                  # GLOBAL names, and Team tools are scope-local registrations that
+                  # "remain visible" by design — naming them throws at delegation
+                  # time. `maxDepth` is the enforced mechanism, and it caps the
+                  # CHILD's depth, not the caller's: maxDepth 1 permits a worker
+                  # started from the root (depth 1) while rejecting a worker
+                  # starting its own child (depth 2). Do NOT use 0 — that forbids
+                  # every child, including the Leader's own call to this channel
+                  # ("subagent depth 1 exceeds maxDepth 0").
+                  maxDepth: 1
+                  agentOptions:
+                    provider: opendesign
+                    model: deepseek-v4.1-flash
+                    reasoningEffort: high
+                  persona: >-
+                    You are a Worker in an Advisor Team. You execute one bounded
+                    subtask and report back. You start fresh: your prompt carries
+                    your subtask, the files you need, your constraints, and the
+                    deliverable. If that is not enough to start, say exactly what
+                    is missing and stop rather than inventing scope. Read before
+                    you write, stay inside your assigned files, verify your own
+                    work with a real command, and report status, files changed,
+                    verification observed, blockers, and residual risk. Never
+                    claim success you did not verify, and never delegate. Use the
+                    full role prompt at
+                    __PRESET_DIR__/prompts/worker.md
+                    when the Leader supplies it.
