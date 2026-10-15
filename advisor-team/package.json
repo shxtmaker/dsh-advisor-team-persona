@@ -1,0 +1,12 @@
+{
+  "name": "@local/dsh-advisor-team-preset",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Advisor Team agent preset: Plan-Task-Collaborate multi-agent collaboration over DSH Agent Teams",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

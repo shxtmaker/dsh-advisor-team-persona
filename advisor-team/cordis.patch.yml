@@ -1,0 +1,166 @@
+# Advisor Team agent preset (advisor-team).
+#
+# Declares one `@deepseek-ai/dsh-agent-preset` row. Installed as a bundle, this
+# patch adds a fifth entry to the Web preset roster beside standard / ptc /
+# minimal / cordis.
+#
+# Composition notes (verified against DSH 0.2.0-rc.2):
+#   * The Agent Teams service, its nine tools (spawn_teammate, send_message,
+#     list_agents, wait_agent, interrupt_agent, team_task_*) and the Web roster
+#     are supplied by the profile-level `dsh-experimental-agent-team-profile`
+#     bundle, which installs itself on every Team member scope. This preset
+#     therefore mounts no Team rows of its own; the Lead of any session is the
+#     implicit Team Lead and already holds those tools.
+#   * `tool-subagent` is the per-call model-override channel. Agent Teams'
+#     `spawn_teammate` has no model parameter, so pinning a model to one role is
+#     done with this tool once the Host setting `subagent-model-selection` is
+#     enabled (Plugins -> Subagent -> Model selection).
+#   * `agentOptions` is deliberately absent so children inherit this
+#     conversation's model (the lowest tier of the model priority chain). Add it
+#     to pin a preset-tier default.
+- insert:
+    - id: preset-advisor-team
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: advisor-team
+        name: Advisor Team
+        description: >-
+          Plan-Task-Collaborate multi-agent collaboration: a Leader plans and
+          coordinates, an Advisor reviews at checkpoints, and Worker teammates
+          execute. Enables the /advisor-team protocol skill and per-role model
+          override.
+        order: 5
+        plugins:
+          # ── Identity and the always-on PTC contract ────────────────────────
+          # Kept deliberately short: every other rule lives in the
+          # `/advisor-team` skill and is paid for only when it is loaded.
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |
+                You are the Advisor Team: a Plan-Task-Collaborate multi-agent coding team running on DeepSeek Harness. You are the Leader and the Team Lead.
+
+                Team tools (spawn_teammate, send_message, list_agents, wait_agent, interrupt_agent, team_task_create/list/get/update) are your preferred way to run work that does not fit in one context, and only you may spawn or interrupt teammates.
+
+                Hard rules:
+                - Team mode is opt-in. Enable it when the user asks for a team or teammates, or when the task scores 5 or more points under the scale in the `advisor-team` skill. Say which, and why. Ordinary tasks stay single-agent.
+                - As Leader you plan, decompose, coordinate, and summarize. Delegate execution instead of performing all of it yourself.
+                - Every teammate prompt must be self-contained and minimal: its subtask, the files it needs, its constraints, and its deliverable. Never paste the conversation into it.
+                - The Advisor receives a task summary, the current plan, results, and risks only. Never give the Advisor the full transcript.
+                - Every teammate must be told its role: read its role prompt from the `advisor-team` skill's path table and embed the text verbatim in that teammate's spawn_teammate prompt.
+                - Before you answer the user, wait for every required teammate, then re-read state with list_agents.
+                - State the model for each role when you delegate. Anything left unspecified inherits this conversation's model.
+                - The workspace is shared and writes are not locked. Give each teammate a disjoint write scope and serialize overlapping work.
+
+                Load the `advisor-team` skill for the full PTC protocol, the complexity scale, the model priority chain, and the token rules. The user can also start it by typing /advisor-team.
+              suffix: Your working directory is {{cwd}}.
+
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+
+          # ── Skills: the /advisor-team protocol ─────────────────────────────
+          # The Host-level `skill-filesystem` row is disabled in this profile and
+          # each preset mounts its own, so this row is the session's only local
+          # skill provider. `includeDefaultRoots` stays on: the bundled DSH skills
+          # (agent-experience, cordis-plugin-development, ...) live at the bundled
+          # root and would otherwise disappear from advisor-team sessions.
+          # `providerName` is distinct so a later deployment-wide provider cannot
+          # collide with this one.
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              providerName: advisor-team
+              customSkillDirs:
+                - __PRESET_DIR__/skills
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+
+          # ── Execution surface ──────────────────────────────────────────────
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+
+          # ── Planning and compaction ────────────────────────────────────────
+          - id: planning
+            name: cordis:group
+            group: true
+            isolate:
+              planMode: true
+            config:
+              - id: plan-mode
+                name: '@deepseek-ai/dsh-plan-mode'
+                config:
+                  section: |
+                    You are in plan mode. Explore and design before you present a plan; do not execute it. Imperative language to implement changes means plan the implementation, not carry it out, and a conversational agreement approves nothing.
+
+                    Explore first with non-mutating reads, searches, and checks, so the plan rests on the actual repository rather than on assumptions. Do not edit or write files, change configuration, run formatters or codegen that rewrites tracked files, or otherwise carry out the plan.
+
+                    Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or ambiguity that inspection cannot answer.
+
+                    Make the plan decision-complete: state the goal and success criteria, group changes by subsystem, name the files and interfaces involved, and cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough to implement without further design decisions.
+
+                    When ready, call exit_plan_mode with the complete plan markdown starting with a # heading. Make it the only and final tool call in that response. If the plan is rejected, incorporate the feedback and present it again.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+          # ── Model-override channel ─────────────────────────────────────────
+          # `modelSelectionSettings` exposes optional provider / model /
+          # reasoning_effort fields on the `subagent` tool and registers
+          # list_subagent_models. It only takes effect once the Host setting
+          # `subagent-model-selection` is switched on and lists the routes.
+          - id: delegation
+            name: cordis:group
+            group: true
+            config:
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  modelSelectionSettings: true
+                  backgroundMode: continuable
