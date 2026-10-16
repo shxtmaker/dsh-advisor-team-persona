@@ -9,12 +9,10 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Scan every text file in the bundle rather than a hard-coded list: a placeholder
-# left behind is a path the model cannot read, and it fails silently — the preset
-# still mounts and reports no error. This script excludes itself, since it names
-# the placeholder in its own source.
 SELF="$(basename "${BASH_SOURCE[0]}")"
+
+# Scan every text file: a placeholder left behind is a path the model cannot
+# read, and it fails silently — the preset still mounts and reports no error.
 mapfile -t FILES < <(grep -rl '__PRESET_DIR__' "$DIR" \
   --include='*.yml' --include='*.md' --include='*.json' --include='*.js' 2>/dev/null \
   | grep -v "/$SELF$" || true)
@@ -25,7 +23,6 @@ if [ "${#FILES[@]}" -eq 0 ]; then
   exit 0
 fi
 
-# Only rewrite the literal placeholder; every other byte is preserved.
 python3 - "$DIR" "${FILES[@]}" <<'PY'
 import sys, pathlib
 directory, files = sys.argv[1], sys.argv[2:]
@@ -42,7 +39,6 @@ for name in files:
 print(f'set __PRESET_DIR__ -> {directory} ({total} total)')
 PY
 
-# Fail loudly if anything is still unresolved.
 LEFT="$(grep -rl '__PRESET_DIR__' "$DIR" 2>/dev/null | grep -v "/$SELF$" || true)"
 if [ -n "$LEFT" ]; then
   echo "ERROR: placeholders remain in:" >&2

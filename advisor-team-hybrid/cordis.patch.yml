@@ -85,7 +85,7 @@
 
                 # Token discipline
 
-                The Advisor never reads the full history; send a digest of objective, plan, changes, blockers, and risks. Workers receive only their subtask, the files involved, their constraints, and the deliverable. Delegate by reference to paths and task ids, never by pasting content. Role prompts live at __PRESET_DIR__/prompts/ and cost nothing until a teammate needs one.
+                The Advisor never reads the full history; send a digest of objective, plan, changes, blockers, and risks. Workers receive only their subtask, the files involved, their constraints, and the deliverable. Delegate by reference to paths and task ids, never by pasting content. Role prompts live at __PRESET_DIR__-hybrid/prompts/ and cost nothing until a teammate needs one.
 
                 # Shared workspace
 
@@ -248,7 +248,7 @@
                     (APPROVE or CHANGE REQUEST), CONFIDENCE, ASSESSMENT, RISKS,
                     REQUIRED CHANGES. Approve sound work instead of inventing
                     blockers. Use the full role prompt at
-                    __PRESET_DIR__/prompts/advisor.md
+                    __PRESET_DIR__-hybrid/prompts/advisor.md
                     when the Leader supplies it.
               - id: tool-subagent-worker
                 name: '@deepseek-ai/dsh-tool-subagent'
@@ -282,5 +282,5 @@
                     verification observed, blockers, and residual risk. Never
                     claim success you did not verify, and never delegate. Use the
                     full role prompt at
-                    __PRESET_DIR__/prompts/worker.md
+                    __PRESET_DIR__-hybrid/prompts/worker.md
                     when the Leader supplies it.
